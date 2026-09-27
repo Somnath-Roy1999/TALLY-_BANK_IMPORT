@@ -5,7 +5,7 @@ from datetime import datetime
 import openpyxl,xml.etree.ElementTree as ET,json,traceback
 
 APP="ACFC Tally Voucher Generator"; COMPANY="ACFC E SERVICES INDIA PRIVATE LIMITED"
-REQ=["Date","Narration","Withdrawal Amt.","Deposit Amt.","ledger type","Ledger Name","Journal Ledger","CONTRA BANK", "Payment bank", "Contra Credit bank", "Contra Debit Bank","Journal Payment Bank","Receipt Bank"]
+BASE_REQ=["Date","Narration","ledger type"]
 
 def s(x): return str(x or "").strip()
 def k(x): return s(x).casefold()
@@ -38,45 +38,139 @@ def master(path):
 def rows(path):
     w=openpyxl.load_workbook(path,data_only=True); ws=w.active
     h={k(ws.cell(1,c).value):c for c in range(1,ws.max_column+1)}
-    miss=[x for x in REQ if k(x) not in h]
-    if miss:raise ValueError("Bank Excel missing: "+", ".join(miss))
+
+    # Only columns required by the voucher types actually present are checked.
+    def has(name): return k(name) in h
+    def value(row,name):
+        col=h.get(k(name))
+        return ws.cell(row,col).value if col else None
+
+    missing=[x for x in BASE_REQ if not has(x)]
+    if missing:
+        raise ValueError("Bank Excel missing: "+", ".join(missing))
+
+    types=set()
+    for r in range(2,ws.max_row+1):
+        raw=value(r,"ledger type")
+        if raw not in (None,""):
+            types.add(k(raw))
+
+    type_requirements={
+        "journal":["Journal Ledger","Journal Payment Bank"],
+        "payment":["Payment bank"],
+        "contra":["Contra Credit bank","Contra Debit Bank"],
+        "receipt":["Receipt Bank"],
+    }
+    for typ, reqs in type_requirements.items():
+        if typ in types:
+            missing.extend(x for x in reqs if not has(x))
+
+    # Amount can be in Withdrawal Amt., Deposit Amt., or either one depending
+    # on the source statement. At least one amount column must exist.
+    if not has("Withdrawal Amt.") and not has("Deposit Amt."):
+        missing.append("Withdrawal Amt. or Deposit Amt.")
+
+    if missing:
+        raise ValueError("Bank Excel missing: "+", ".join(dict.fromkeys(missing)))
+
     out=[]
     for r in range(2,ws.max_row+1):
-        z={x:ws.cell(r,h[k(x)]).value for x in REQ}
-        if any(v not in (None,"") for v in z.values()):out.append(z)
+        z={
+            "Date":value(r,"Date"),
+            "Narration":value(r,"Narration"),
+            "Withdrawal Amt.":value(r,"Withdrawal Amt."),
+            "Deposit Amt.":value(r,"Deposit Amt."),
+            "ledger type":value(r,"ledger type"),
+            "Ledger Name":value(r,"Ledger Name"),
+            "Journal Ledger":value(r,"Journal Ledger"),
+            "CONTRA BANK":value(r,"CONTRA BANK"),
+            "Payment bank":value(r,"Payment bank"),
+            "Contra Credit bank":value(r,"Contra Credit bank"),
+            "Contra Debit Bank":value(r,"Contra Debit Bank"),
+            "Journal Payment Bank":value(r,"Journal Payment Bank"),
+            "Receipt Bank":value(r,"Receipt Bank"),
+        }
+        if any(v not in (None,"") for v in z.values()):
+            out.append(z)
     return out
+
 def build(rs,m,auto=True):
     vs=[]; missing=[]; cnt={"Journal":0,"Payment":0,"Contra":0,"Receipt":0}; total=0
     q={x:0 for x in cnt}
+
     def ensure(n,u):
         n=s(n)
         if n and k(n) not in m:
             missing.append((n,u))
             if auto:m[k(n)]=(n,u)
+
+    def amount(r):
+        # Prefer withdrawal, then deposit. This matches bank-statement layouts
+        # while also supporting files where only one amount column exists.
+        return amt(r.get("Withdrawal Amt.")) or amt(r.get("Deposit Amt."))
+
     for i,r in enumerate(rs,2):
-        t=k(r["ledger type"]); led=s(r["Ledger Name"]); d=date(r["Date"]); nar=s(r["Narration"]); w=amt(r["Withdrawal Amt."]); dep=amt(r["Deposit Amt."])
-        if not led:raise ValueError(f"Row {i}: Ledger Name blank.")
+        t=k(r.get("ledger type"))
+        d=date(r.get("Date")); nar=s(r.get("Narration"))
+        led=s(r.get("Ledger Name"))
+
         if t=="journal":
-            a=w or dep; jl=s(r["Journal Ledger"]); bank=s(r["Journal Payment Bank"])
-            if not jl or not bank:raise ValueError(f"Row {i}: Journal needs Journal Ledger and Journal Payment Bank.")
-            ensure(jl,"Indirect Expenses");ensure(led,"Sundry Creditors");ensure(bank,"Bank Accounts")
-            if a<=0:raise ValueError(f"Row {i}: Journal amount invalid.")
-            q["Journal"]+=1;q["Payment"]+=1;cnt["Journal"]+=1;cnt["Payment"]+=1;total+=a
-            vs += [(d,"Journal",f"J-{q['Journal']:04d}",nar,[(jl,-a,1),(led,a,0)]),(d,"Payment",f"P-{q['Payment']:04d}",nar,[(led,-a,1),(bank,a,0)])]
+            a=amount(r); jl=s(r.get("Journal Ledger")); bank=s(r.get("Journal Payment Bank"))
+            if not jl or not bank:
+                raise ValueError(f"Row {i}: Journal needs Journal Ledger and Journal Payment Bank.")
+            if not led:
+                raise ValueError(f"Row {i}: Journal needs Ledger Name.")
+            ensure(jl,"Indirect Expenses"); ensure(led,"Sundry Creditors"); ensure(bank,"Bank Accounts")
+            if a<=0: raise ValueError(f"Row {i}: Journal amount invalid.")
+            q["Journal"]+=1; q["Payment"]+=1; cnt["Journal"]+=1; cnt["Payment"]+=1; total+=a
+            vs += [
+                (d,"Journal",f"J-{q['Journal']:04d}",nar,[(jl,-a,1),(led,a,0)]),
+                (d,"Payment",f"P-{q['Payment']:04d}",nar,[(led,-a,1),(bank,a,0)])
+            ]
+
+        elif t=="payment":
+            a=amount(r); bank=s(r.get("Payment bank"))
+            if not led:
+                raise ValueError(f"Row {i}: Payment needs Ledger Name.")
+            if not bank:
+                raise ValueError(f"Row {i}: Payment needs Payment bank.")
+            ensure(led,"Sundry Creditors"); ensure(bank,"Bank Accounts")
+            if a<=0: raise ValueError(f"Row {i}: Payment amount invalid.")
+            q["Payment"]+=1; cnt["Payment"]+=1; total+=a
+            vs.append((d,"Payment",f"P-{q['Payment']:04d}",nar,[(led,-a,1),(bank,a,0)]))
+
         elif t=="contra":
-            a=dep or w; bank=s(r["CONTRA BANK", "Payment bank", "Contra Credit bank", "Contra Debit Bank"])
-            if not bank:raise ValueError(f"Row {i}: Contra needs CONTRA BANK.")
-            ensure(led,"Bank Accounts");ensure(bank,"Bank Accounts")
-            if a<=0:raise ValueError(f"Row {i}: Contra amount invalid.")
-            q["Contra"]+=1;cnt["Contra"]+=1;total+=a;vs.append((d,"Contra",f"C-{q['Contra']:04d}",nar,[(bank,-a,1),(led,a,0)]))
+            a=amount(r)
+            credit=s(r.get("Contra Credit bank"))
+            debit=s(r.get("Contra Debit Bank"))
+            if not credit or not debit:
+                raise ValueError(f"Row {i}: Contra needs Contra Credit bank and Contra Debit Bank.")
+            ensure(debit,"Bank Accounts"); ensure(credit,"Bank Accounts")
+            if a<=0: raise ValueError(f"Row {i}: Contra amount invalid.")
+            q["Contra"]+=1; cnt["Contra"]+=1; total+=a
+            # Contra Debit Bank = DR, Contra Credit bank = CR.
+            vs.append((d,"Contra",f"C-{q['Contra']:04d}",nar,[(debit,-a,1),(credit,a,0)]))
+
         elif t=="receipt":
-            a=dep;bank=s(r["Receipt Bank"])
-            if not bank:raise ValueError(f"Row {i}: Receipt needs Receipt Bank.")
-            ensure(bank,"Bank Accounts");ensure(led,"Sundry Creditors")
-            if a<=0:raise ValueError(f"Row {i}: Receipt amount invalid.")
-            q["Receipt"]+=1;cnt["Receipt"]+=1;total+=a;vs.append((d,"Receipt",f"R-{q['Receipt']:04d}",nar,[(bank,-a,1),(led,a,0)]))
-        else:raise ValueError(f"Row {i}: Unsupported ledger type {r['ledger type']!r}.")
-    return vs,cnt,total,list(dict.fromkeys(missing))
+            a=amount(r); bank=s(r.get("Receipt Bank"))
+            if not led:
+                raise ValueError(f"Row {i}: Receipt needs Ledger Name.")
+            if not bank:
+                raise ValueError(f"Row {i}: Receipt needs Receipt Bank.")
+            ensure(bank,"Bank Accounts"); ensure(led,"Sundry Creditors")
+            if a<=0: raise ValueError(f"Row {i}: Receipt amount invalid.")
+            q["Receipt"]+=1; cnt["Receipt"]+=1; total+=a
+            vs.append((d,"Receipt",f"R-{q['Receipt']:04d}",nar,[(bank,-a,1),(led,a,0)]))
+
+        elif t=="":
+            raise ValueError(f"Row {i}: Ledger type blank.")
+        else:
+            raise ValueError(f"Row {i}: Unsupported ledger type {r.get('ledger type')!r}.")
+
+    # Remove duplicate missing-ledger notices while preserving order.
+    missing=list(dict.fromkeys(missing))
+    return vs,cnt,total,missing
+
 def voucher_xml(vs,path):
     e=ET.Element("ENVELOPE");h=ET.SubElement(e,"HEADER")
     for t,v in [("VERSION","1"),("TALLYREQUEST","Import"),("TYPE","Data"),("ID","Vouchers")]:add(h,t,v)
