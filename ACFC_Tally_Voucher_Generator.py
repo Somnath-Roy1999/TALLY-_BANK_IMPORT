@@ -182,7 +182,7 @@ def build(rs,m,auto=True):
             ensure(bank,"Bank Accounts"); ensure(led,"Sundry Creditors")
             if a<=0: raise ValueError(f"Row {i}: Receipt amount invalid.")
             q["Receipt"]+=1; cnt["Receipt"]+=1; total+=a
-            vs.append((d,"Receipt",f"R-{q['Receipt']:04d}",nar,[(bank,-a,1),(led,a,0)]))
+            vs.append((d,"Receipt",f"R-{q['Receipt']:04d}",nar,[(led,a,0),(bank,-a,1)]))
 
         elif t=="":
             raise ValueError(f"Row {i}: Ledger type blank.")
