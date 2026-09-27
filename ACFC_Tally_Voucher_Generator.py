@@ -222,8 +222,30 @@ def review(vs,path):
 BUILTIN_MASTER = [("TIS EXPENSES","Indirect Expenses"),("BISWA BARAN DUBE","Sundry Creditors"),("MD PERSONAL A/C","Bank Accounts"),("HDFC BANK 3231","Bank Accounts"),("ACFC E SERVICES INDIA PRIVATE LIMITED","Sundry Creditors")]
 def builtin_master(): return {k(n):(n,u) for n,u in BUILTIN_MASTER}
 def generate(bank,out,auto=True):
-    m=builtin_master();rs=rows(bank);vs,cnt,total,missing=build(rs,m,auto);o=Path(out);o.mkdir(parents=True,exist_ok=True);stem=Path(bank).stem.replace(" ","_")
-    a=o/f"{stem}_Voucher_Import.xml";b=o/f"{stem}_Master_Import.xml";c=o/f"{stem}_Voucher_Review.xlsx";voucher_xml(vs,a);master_xml(m,b);review(vs,c)
+    if not s(bank):
+        raise ValueError("Please select a Bank Statement Excel file.")
+    bank_path=Path(bank).expanduser().resolve()
+    if not bank_path.is_file():
+        raise ValueError(f"Bank Statement file not found: {bank_path}")
+    # If Output Folder is left blank, use the bank statement's folder.
+    # This avoids accidentally writing to an unrelated current working directory.
+    out_path=Path(out).expanduser() if s(out) else bank_path.parent
+    out_path=out_path.resolve()
+    if out_path.exists() and not out_path.is_dir():
+        raise ValueError(f"Output Folder is not a folder: {out_path}")
+    out_path.mkdir(parents=True,exist_ok=True)
+    m=builtin_master();rs=rows(bank_path);vs,cnt,total,missing=build(rs,m,auto);o=out_path;stem=bank_path.stem.replace(" ","_")
+    a=o/f"{stem}_Voucher_Import.xml";b=o/f"{stem}_Master_Import.xml";c=o/f"{stem}_Voucher_Review.xlsx"
+    try:
+        voucher_xml(vs,a);master_xml(m,b);review(vs,c)
+    except PermissionError as e:
+        locked=str(getattr(e,"filename",None) or a)
+        raise PermissionError(
+            f"Cannot write the output file because Windows denied access.\n\n"
+            f"File: {locked}\n\n"
+            f"Close that XML/Excel file if it is open in Tally, Excel, Notepad, or another program, "
+            f"then click CREATE XML again."
+        ) from e
     return len(rs),len(vs),cnt,total,missing,[a,b,c]
 
 class App:
