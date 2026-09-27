@@ -60,6 +60,7 @@ def rows(path):
         "payment":["Payment bank"],
         "contra":["Contra Credit bank","Contra Debit Bank"],
         "receipt":["Receipt Bank"],
+        "salary":[],
     }
     for typ, reqs in type_requirements.items():
         if typ in types:
@@ -150,6 +151,18 @@ def build(rs,m,auto=True):
             q["Contra"]+=1; cnt["Contra"]+=1; total+=a
             # Contra Debit Bank = DR, Contra Credit bank = CR.
             vs.append((d,"Contra",f"C-{q['Contra']:04d}",nar,[(debit,-a,1),(credit,a,0)]))
+
+        elif t in ("salary","salary payment","salarypayment"):
+            # Salary entries are handled as Payment vouchers.
+            a=amount(r); bank=s(r.get("Payment bank"))
+            if not led:
+                raise ValueError(f"Row {i}: Salary needs Ledger Name.")
+            if not bank:
+                raise ValueError(f"Row {i}: Salary needs Payment bank.")
+            ensure(led,"Sundry Creditors"); ensure(bank,"Bank Accounts")
+            if a<=0: raise ValueError(f"Row {i}: Salary amount invalid.")
+            q["Payment"]+=1; cnt["Payment"]+=1; total+=a
+            vs.append((d,"Payment",f"P-{q[\"Payment\"]:04d}",nar,[(led,-a,1),(bank,a,0)]))
 
         elif t=="receipt":
             a=amount(r); bank=s(r.get("Receipt Bank"))
