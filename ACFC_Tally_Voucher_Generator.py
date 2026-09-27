@@ -1,5 +1,6 @@
 # ACFC Tally Voucher Generator
 # Updated mapping:
-# - Contra: Contra Debit Bank = DR, Contra Credit bank = CR; Ledger Name ignored.
-# - Payment: Payment bank = CR; Ledger Name = DR.
-# - Journal unchanged and still auto-creates its Payment voucher.
+# - Contra: Contra Debit Bank = DR; Contra Credit bank = CR; Ledger Name ignored.
+# - Payment: Ledger Name = DR; Payment bank = CR.
+# - Journal unchanged and auto-creates its Payment voucher.
+# - Receipt unchanged: Receipt Bank = DR; Ledger Name = CR.
