@@ -162,7 +162,7 @@ def build(rs,m,auto=True):
             ensure(led,"Sundry Creditors"); ensure(bank,"Bank Accounts")
             if a<=0: raise ValueError(f"Row {i}: Salary amount invalid.")
             q["Payment"]+=1; cnt["Payment"]+=1; total+=a
-            vs.append((d,"Payment",f"P-{q[\"Payment\"]:04d}",nar,[(led,-a,1),(bank,a,0)]))
+            vs.append((d,"Payment",f"P-{q['Payment']:04d}",nar,[(led,-a,1),(bank,a,0)]))
 
         elif t=="receipt":
             a=amount(r); bank=s(r.get("Receipt Bank"))
