@@ -217,8 +217,6 @@ class App:
         ttk.Label(f,text=t,width=18).grid(row=i,column=0,sticky="w",pady=8);ttk.Entry(f,textvariable=v).grid(row=i,column=1,sticky="ew",padx=6);ttk.Button(f,text="Browse",command=cmd).grid(row=i,column=2);f.columnconfigure(1,weight=1)
     def pb(self): 
         p=filedialog.askopenfilename(filetypes=[("Excel","*.xlsx *.xlsm")]);self.bank.set(p) if p else None
-    def pm(self):
-        p=filedialog.askopenfilename(filetypes=[("Excel","*.xlsx *.xlsm")]);self.mp.set(p) if p else None
     def po(self):
         p=filedialog.askdirectory();self.out.set(p) if p else None
     def write(self,x):
