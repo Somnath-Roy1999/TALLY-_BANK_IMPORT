@@ -2,7 +2,16 @@ import tkinter as tk
 from tkinter import ttk,filedialog,messagebox
 from pathlib import Path
 from datetime import datetime
-import openpyxl,xml.etree.ElementTree as ET,json,traceback
+import xml.etree.ElementTree as ET
+import traceback
+
+try:
+    import openpyxl
+except ImportError:
+    root=tk.Tk(); root.withdraw()
+    messagebox.showerror("ACFC Tally Voucher Generator", "Python package 'openpyxl' is missing.\\n\\nOpen Command Prompt and run:\\n\\npip install openpyxl\\n\\nThen start the program again.")
+    root.destroy()
+    raise
 
 APP="ACFC Tally Voucher Generator"; COMPANY="ACFC E SERVICES INDIA PRIVATE LIMITED"
 BASE_REQ=["Date","Narration","ledger type"]
@@ -60,7 +69,7 @@ def rows(path):
         "payment":["Payment bank"],
         "contra":["Contra Credit bank","Contra Debit Bank"],
         "receipt":["Receipt Bank"],
-        "salary":[],
+        "salary":["Payment bank"],
     }
     for typ, reqs in type_requirements.items():
         if typ in types:
@@ -242,6 +251,16 @@ class App:
         try:
             n,v,c,t,mi,fs=generate(self.bank.get(),self.out.get(),self.auto.get());self.write(f"Created {v} vouchers from {n} transactions | ₹{t:,.2f}");[self.write("→ "+str(x)) for x in fs];messagebox.showinfo("Completed",f"Created successfully!\n\nTransactions: {n}\nVouchers: {v}\nTotal: ₹{t:,.2f}")
         except Exception as e:self.write(traceback.format_exc());messagebox.showerror("Error",str(e))
-tk.Tk.report_callback_exception=lambda *a:None
+def _fatal_error(exc_type, exc_value, exc_tb):
+    try:
+        messagebox.showerror(
+            APP,
+            "The program could not start.\\n\\n" + "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        )
+    except Exception:
+        pass
+
+tk.Tk.report_callback_exception=_fatal_error
+
 if __name__=="__main__":
  r=tk.Tk();App(r);r.mainloop()
